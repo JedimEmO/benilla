@@ -480,12 +480,12 @@ mod tests {
         assert_eq!(order, ["ExhaustionTick", "PlayerFrame"]);
     }
 
-    /// A shipped `.xml` the layer does not list never loads, with no error to say so; the one
-    /// glue file loads by name ([`super::super::glue::GLUE_LAYER`]).
+    /// A shipped `.xml` the layer does not list never loads, with no error to say so; the
+    /// glue files load by name ([`super::super::glue::GLUE_LAYER`]).
     #[test]
     fn the_manifest_lists_every_shipped_file_and_nothing_else() {
         let mut listed = shipped_manifest_files();
-        listed.push(super::super::glue::GLUE_LAYER.to_string());
+        listed.extend(super::super::glue::GLUE_LAYER.iter().map(|f| f.to_string()));
         let mut shipped: Vec<String> = super::super::content::shipped_files()
             .filter(|f| f.ends_with(".xml"))
             .map(str::to_owned)

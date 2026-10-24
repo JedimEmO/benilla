@@ -3064,6 +3064,132 @@ fn an_empty_roster_asks_for_the_realm_list_only_with_no_realm_chosen() {
     assert_eq!(vm(&app).errors(), Vec::<String>::new());
 }
 
+/// benilla's scroll over the stock character list (`CharacterSelectScroll.xml`): fifteen
+/// characters show nine at a time with the create button below, the wheel over the list moves the
+/// window, a row's click selects the character it shows, and the arrow keys move the selection
+/// with the window following it, wrapping as the stock keys do.
+#[test]
+fn the_character_list_scrolls_past_ten() {
+    let _ = benilla_formats::wow_data_or_skip!();
+    let roster: Vec<benilla_protocol::Character> = (1..=15)
+        .map(|i| crate::glue_session::roster::test_character(0x100 + i, &format!("Bot{i:02}")))
+        .collect();
+    let (mut app, _realmd, _world) = char_select_app(&roster, "0", false);
+    until(&mut app, "the roster", |app| {
+        seen(app, "CHARACTER_LIST_UPDATE") >= 2 && mgr(app).state == ScreenState::Idle
+    });
+    let rows = |app: &App| {
+        vm(app)
+            .eval::<Vec<String>>(
+                "local t = {} for i = 1, 10 do \
+                   local b = getglobal('CharSelectCharacterButton'..i) \
+                   if b:IsShown() then \
+                     table.insert(t, getglobal(b:GetName()..'ButtonTextName'):GetText()) end end \
+                 return t",
+            )
+            .unwrap()
+    };
+    let window = |first: usize, last: usize| -> Vec<String> {
+        (first..=last).map(|i| format!("Bot{i:02}")).collect()
+    };
+    let selected = |app: &App| {
+        vm(app)
+            .eval::<i64>("return CharacterSelect.selectedIndex")
+            .unwrap()
+    };
+    assert_eq!(rows(&app), window(1, 9));
+    assert_eq!(
+        vm(&app)
+            .eval::<(bool, i64, f64)>(
+                "return CharSelectCreateCharacterButton:IsShown() == 1, \
+                 CharSelectCreateCharacterButton:GetID(), GetNumCharacters()"
+            )
+            .unwrap(),
+        (true, 16, 15.0)
+    );
+
+    // The wheel over the list: down moves the window a row a notch, and stops at the last row.
+    let (x, y) = vm(&app)
+        .eval::<(f32, f32)>(
+            "local b = CharSelectCharacterButton5 \
+             return (b:GetLeft() + b:GetRight()) / 2, (b:GetTop() + b:GetBottom()) / 2",
+        )
+        .unwrap();
+    let wheel = |app: &mut App, delta: f32| {
+        let walk = app
+            .world_mut()
+            .non_send_resource_mut::<UiScript>()
+            .mouse_wheel_bound(x, y, delta, false);
+        assert_eq!(walk, benilla_ui::script::WheelWalk::Frame);
+    };
+    for _ in 0..3 {
+        wheel(&mut app, -1.0);
+    }
+    assert_eq!(rows(&app), window(4, 12));
+    for _ in 0..10 {
+        wheel(&mut app, -1.0);
+    }
+    assert_eq!(rows(&app), window(7, 15));
+    assert_eq!(selected(&app), 1, "the wheel leaves the selection");
+
+    // A row selects the character it shows.
+    vm(&app).run("CharSelectCharacterButton9:Click()").unwrap();
+    assert_eq!(selected(&app), 15);
+    assert_eq!(vm(&app).glue_selected_guid(), Some(0x10f));
+
+    // Down from the last wraps to the first, and the window follows; up wraps back.
+    let key = |app: &mut App, k: &str| {
+        app.world_mut()
+            .non_send_resource_mut::<UiScript>()
+            .key_down(k);
+    };
+    key(&mut app, "DOWN");
+    assert_eq!(selected(&app), 1);
+    assert_eq!(rows(&app), window(1, 9));
+    key(&mut app, "UP");
+    assert_eq!(selected(&app), 15);
+    assert_eq!(rows(&app), window(7, 15));
+    for _ in 0..7 {
+        key(&mut app, "UP");
+    }
+    assert_eq!(selected(&app), 8);
+    assert_eq!(rows(&app), window(7, 15), "the selection is still in view");
+    key(&mut app, "UP");
+    assert_eq!(selected(&app), 7);
+    key(&mut app, "UP");
+    assert_eq!(selected(&app), 6);
+    assert_eq!(rows(&app), window(6, 14));
+    assert_eq!(
+        vm(&app)
+            .eval::<bool>("return CharSelectCharacterButton1:GetID() == 6")
+            .unwrap(),
+        true
+    );
+    assert_eq!(vm(&app).errors(), Vec::<String>::new());
+}
+
+/// Ten characters or fewer show as the stock list does, the create button's id the next row's.
+#[test]
+fn a_short_character_list_looks_as_the_stock_one_does() {
+    let _ = benilla_formats::wow_data_or_skip!();
+    let (mut app, _realmd, _world) = char_select_app(&roster3(), "0", false);
+    until(&mut app, "the roster", |app| {
+        seen(app, "CHARACTER_LIST_UPDATE") >= 2 && mgr(app).state == ScreenState::Idle
+    });
+    assert_eq!(
+        vm(&app)
+            .eval::<(bool, bool, i64, i64, bool)>(
+                "return CharSelectCharacterButton3:IsShown() == 1, \
+                 CharSelectCharacterButton4:IsShown() == 1, \
+                 CharSelectCharacterButton3:GetID(), CharSelectCreateCharacterButton:GetID(), \
+                 CharSelectCreateCharacterButton:IsShown() == 1"
+            )
+            .unwrap(),
+        (true, false, 3, 4, true)
+    );
+    assert_eq!(vm(&app).errors(), Vec::<String>::new());
+}
+
 // ── The stock screens' scenes through the glue booth ────────────────────────────────────────────
 
 fn preview(app: &App) -> &crate::portrait::GluePreview {

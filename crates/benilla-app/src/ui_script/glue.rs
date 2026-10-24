@@ -166,14 +166,15 @@ pub(super) fn load_glue(script: &mut UiScript) -> Vec<String> {
     failures
 }
 
-/// benilla's one glue file, its realmlist control over the stock `AccountLogin`, which loads after
-/// every `GlueXML.toc` row and before `FRAMES_LOADED`, as the in-game layer loads after
-/// `FrameXML.toc` ([`super::manifest::LAYER_MANIFEST`]); `WOW_STOCK_UI=1` drops it with that layer.
-pub(super) const GLUE_LAYER: &str = "AccountLoginRealmlist.xml";
+/// benilla's glue files, its realmlist control over the stock `AccountLogin` and its scroll over
+/// the stock character list, which load after every `GlueXML.toc` row and before `FRAMES_LOADED`,
+/// as the in-game layer loads after `FrameXML.toc` ([`super::manifest::LAYER_MANIFEST`]);
+/// `WOW_STOCK_UI=1` drops them with that layer.
+pub(super) const GLUE_LAYER: &[&str] = &["AccountLoginRealmlist.xml", "CharacterSelectScroll.xml"];
 
 /// Load [`GLUE_LAYER`] off the shipped tree; returns its failures.
 fn load_glue_layer(script: &UiScript) -> Vec<String> {
-    let files = vec![GLUE_LAYER.to_string()];
+    let files: Vec<String> = GLUE_LAYER.iter().map(|f| f.to_string()).collect();
     let layer = super::addons::Addon::new(
         "benilla".to_string(),
         benilla_ui::toc::Toc {

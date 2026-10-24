@@ -1,0 +1,124 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+    <!-- benilla's scroll over the stock character list, for a server that allows more than the
+         ten characters the stock screen has rows for. The ten stock buttons stay where they are
+         and show a window of the roster, each button's id the character it shows, so the stock
+         click handlers select it. The arrow keys move the selection as before and the window
+         follows it; the mouse wheel over the list moves the window. Once the roster fills the
+         rows, nine show and the create button keeps the tenth's place at the bottom. With ten or
+         fewer characters it looks as the stock screen does. -->
+    <Script><![CDATA[
+        -- The protocol's character count is one byte; the server refuses a character past its own
+        -- CharactersPerRealm.
+        MAX_CHARACTERS_PER_REALM = 255;
+        CharacterSelect.scrollOffset = 0;
+
+        -- How many rows the window shows: all ten, or nine while the create button needs the
+        -- bottom row.
+        function BenillaCharacterSelect_ShownRows(numChars)
+            if ( numChars >= MAX_CHARACTERS_DISPLAYED and numChars < MAX_CHARACTERS_PER_REALM and IsConnectedToServer() ) then
+                return MAX_CHARACTERS_DISPLAYED - 1;
+            end
+            return MAX_CHARACTERS_DISPLAYED;
+        end
+
+        -- Fill the rows from the window's first character, as the stock list fills them from the
+        -- first, hide the rest, and highlight the selected character's row as the stock
+        -- UpdateCharacterSelection does.
+        function BenillaCharacterSelect_UpdateRows()
+            local numChars = GetNumCharacters();
+            local rows = BenillaCharacterSelect_ShownRows(numChars);
+            local offset = max(0, min(CharacterSelect.scrollOffset, numChars - rows));
+            CharacterSelect.scrollOffset = offset;
+            for index=1, MAX_CHARACTERS_DISPLAYED, 1 do
+                local button = getglobal("CharSelectCharacterButton"..index);
+                local id = offset + index;
+                button:UnlockHighlight();
+                if ( index <= rows and id <= numChars ) then
+                    local name, race, class, level, zone, fileString, gender, ghost = GetCharacterInfo(id);
+                    button:SetID(id);
+                    if ( not name ) then
+                        button:SetText("ERROR - Tell Jeremy");
+                    else
+                        getglobal("CharSelectCharacterButton"..index.."ButtonTextName"):SetText(name);
+                        if( ghost ) then
+                            getglobal("CharSelectCharacterButton"..index.."ButtonTextInfo"):SetText(format(TEXT(CHARACTER_SELECT_INFO_GHOST), level, class));
+                        else
+                            getglobal("CharSelectCharacterButton"..index.."ButtonTextInfo"):SetText(format(TEXT(CHARACTER_SELECT_INFO), level, class));
+                        end
+                        getglobal("CharSelectCharacterButton"..index.."ButtonTextLocation"):SetText(zone or "");
+                    end
+                    if ( id == CharacterSelect.selectedIndex ) then
+                        button:LockHighlight();
+                    end
+                    button:Show();
+                else
+                    button:Hide();
+                end
+            end
+        end
+
+        function BenillaCharacterSelect_Scroll(delta)
+            CharacterSelect.scrollOffset = max(0, CharacterSelect.scrollOffset + delta);
+            BenillaCharacterSelect_UpdateRows();
+        end
+
+        -- The stock list (CharacterSelect.lua's UpdateCharacterList) over the window: the create
+        -- button's id is the first free character, past the last one.
+        function UpdateCharacterList()
+            local numChars = GetNumCharacters();
+            BenillaCharacterSelect_UpdateRows();
+
+            if ( numChars == 0 ) then
+                CharacterSelectDeleteButton:Disable();
+                CharSelectEnterWorldButton:Disable();
+            else
+                CharacterSelectDeleteButton:Enable();
+                CharSelectEnterWorldButton:Enable();
+            end
+
+            CharacterSelect.createIndex = 0;
+            CharSelectCreateCharacterButton:Hide();
+            if ( numChars < MAX_CHARACTERS_PER_REALM ) then
+                CharacterSelect.createIndex = numChars + 1;
+                if ( IsConnectedToServer() ) then
+                    CharSelectCreateCharacterButton:SetID(numChars + 1);
+                    CharSelectCreateCharacterButton:Show();
+                end
+            end
+
+            if ( numChars == 0 ) then
+                CharacterSelect.selectedIndex = 0;
+                return;
+            end
+
+            if ( CharacterSelect.selectLast == 1 ) then
+                CharacterSelect.selectLast = 0;
+                CharacterSelect_SelectCharacter(numChars, 1);
+                return;
+            end
+
+            if ( (CharacterSelect.selectedIndex == 0) or (CharacterSelect.selectedIndex > numChars) ) then
+                CharacterSelect.selectedIndex = 1;
+            end
+            CharacterSelect_SelectCharacter(CharacterSelect.selectedIndex, 1);
+        end
+
+        -- A new selection (UPDATE_SELECTED_CHARACTER) outside the window scrolls it into view,
+        -- then the rows redraw with its highlight.
+        function UpdateCharacterSelection()
+            local index = CharacterSelect.selectedIndex;
+            local rows = BenillaCharacterSelect_ShownRows(GetNumCharacters());
+            if ( index > 0 and index <= CharacterSelect.scrollOffset ) then
+                CharacterSelect.scrollOffset = index - 1;
+            elseif ( index > CharacterSelect.scrollOffset + rows ) then
+                CharacterSelect.scrollOffset = index - rows;
+            end
+            BenillaCharacterSelect_UpdateRows();
+        end
+
+        CharacterSelectCharacterFrame:EnableMouseWheel(1);
+        CharacterSelectCharacterFrame:SetScript("OnMouseWheel", function()
+            BenillaCharacterSelect_Scroll(-arg1);
+        end);
+    ]]></Script>
+</Ui>
