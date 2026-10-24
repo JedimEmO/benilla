@@ -607,11 +607,13 @@ pub fn load_spell_catalog(chain: &mut Chain) -> Result<SpellCatalog> {
                 // Resolved at load, read off the armed record (`0x6e1563`).
                 category_wildcard: u32_at(r, COL_CATEGORY)
                     .is_some_and(|c| wildcard_categories.contains(&c)),
-                recovery_ms: u32_at(r, COL_RECOVERY_TIME).unwrap_or(0),
+                recovery_ms: cooldown_override(id)
+                    .map_or_else(|| u32_at(r, COL_RECOVERY_TIME).unwrap_or(0), |o| o.0),
                 interrupt_flags: u32_at(r, COL_INTERRUPT_FLAGS).unwrap_or(0),
                 aura_interrupt_flags: u32_at(r, COL_AURA_INTERRUPT_FLAGS).unwrap_or(0),
                 channel_interrupt_flags: u32_at(r, COL_CHANNEL_INTERRUPT_FLAGS).unwrap_or(0),
-                category_recovery_ms: u32_at(r, COL_CATEGORY_RECOVERY_TIME).unwrap_or(0),
+                category_recovery_ms: cooldown_override(id)
+                    .map_or_else(|| u32_at(r, COL_CATEGORY_RECOVERY_TIME).unwrap_or(0), |o| o.1),
                 start_recovery_category: u32_at(r, COL_START_RECOVERY_CATEGORY).unwrap_or(0),
                 start_recovery_ms: u32_at(r, COL_START_RECOVERY_TIME).unwrap_or(0),
                 power_type: u32_at(r, COL_POWER_TYPE).unwrap_or(0),
@@ -772,4 +774,33 @@ mod learn_effect_tests {
         // A plain ability teaches nothing.
         assert!(cat.learn_effects(2383).is_empty(), "Find Herbs");
     }
+}
+
+/// Cooldowns a server changed in its own data, from the `BENILLA_SPELL_COOLDOWNS` variable as
+/// `spell:recovery_ms:category_recovery_ms` entries separated by commas, e.g. `8690:0:60000` for
+/// a hearthstone on one minute. The 1.12 protocol never sends a spell's cooldown on an ordinary
+/// cast; the client starts the timer from Spell.dbc, so a server-side change needs this too.
+fn cooldown_override(spell: u32) -> Option<(u32, u32)> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static OVERRIDES: OnceLock<HashMap<u32, (u32, u32)>> = OnceLock::new();
+    OVERRIDES
+        .get_or_init(|| {
+            std::env::var("BENILLA_SPELL_COOLDOWNS")
+                .ok()
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|entry| {
+                            let mut parts = entry.trim().split(':');
+                            let id = parts.next()?.trim().parse().ok()?;
+                            let recovery = parts.next()?.trim().parse().ok()?;
+                            let category = parts.next()?.trim().parse().ok()?;
+                            Some((id, (recovery, category)))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .get(&spell)
+        .copied()
 }
