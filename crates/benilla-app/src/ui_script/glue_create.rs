@@ -127,7 +127,12 @@ pub(crate) fn create_catalog(
         }
     }
     for race in catalog.races.iter().map(|r| r.id).collect::<Vec<_>>() {
-        let list = create.class_list(race);
+        let mut list = create.class_list(race);
+        for class in extra_classes_for(race) {
+            if !list.contains(&class) {
+                list.push(class);
+            }
+        }
         for &class in &list {
             if let Some(table) = classes.filter(|t| t.has_row(u32::from(class))) {
                 catalog.classes.insert(
@@ -250,4 +255,23 @@ mod tests {
                 .is_empty()
         );
     }
+}
+
+/// Extra (race, class) pairs the create screen offers beyond `CharBaseInfo`, from the
+/// `BENILLA_EXTRA_CLASSES` variable as `race:class` pairs separated by commas, e.g. `3:7` for a
+/// Dwarf shaman. The server must know the pair too, or it refuses the character.
+fn extra_classes_for(race: u8) -> Vec<u8> {
+    std::env::var("BENILLA_EXTRA_CLASSES")
+        .ok()
+        .map(|v| {
+            v.split(',')
+                .filter_map(|pair| {
+                    let (r, c) = pair.trim().split_once(':')?;
+                    Some((r.trim().parse::<u8>().ok()?, c.trim().parse::<u8>().ok()?))
+                })
+                .filter(|&(r, _)| r == race)
+                .map(|(_, c)| c)
+                .collect()
+        })
+        .unwrap_or_default()
 }
